@@ -1,0 +1,70 @@
+name: Gerar APK
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Localizar a pasta do projeto
+        run: |
+          CFG=$(find . -name capacitor.config.json -not -path "*/node_modules/*" | head -1)
+          if [ -z "$CFG" ]; then
+            echo "::error::Nao encontrei o arquivo capacitor.config.json no repositorio. Envie todos os arquivos do projeto (package.json, capacitor.config.json, pasta www e pasta assets)."
+            exit 1
+          fi
+          DIR=$(dirname "$CFG")
+          echo "Projeto encontrado em: $DIR"
+          ls -la "$DIR"
+          echo "APP_DIR=$DIR" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Baixar fontes (Jost e Cormorant Garamond)
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          mkdir -p www/fonts
+          curl -fL "https://raw.githubusercontent.com/google/fonts/main/ofl/jost/Jost%5Bwght%5D.ttf" -o www/fonts/Jost.ttf || echo "Nao foi possivel baixar a fonte Jost"
+          curl -fL "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/CormorantGaramond%5Bwght%5D.ttf" -o www/fonts/CormorantGaramond.ttf || echo "Nao foi possivel baixar a fonte Cormorant Garamond"
+          ls -la www/fonts
+
+      - name: Instalar dependencias
+        working-directory: ${{ env.APP_DIR }}
+        run: npm install
+
+      - name: Criar projeto Android
+        working-directory: ${{ env.APP_DIR }}
+        run: npx cap add android
+
+      - name: Gerar icone do urso
+        working-directory: ${{ env.APP_DIR }}
+        continue-on-error: true
+        run: npx capacitor-assets generate --android --iconBackgroundColor '#04201a' --iconBackgroundColorDark '#04201a'
+
+      - name: Sincronizar app
+        working-directory: ${{ env.APP_DIR }}
+        run: npx cap sync android
+
+      - name: Compilar APK
+        working-directory: ${{ env.APP_DIR }}/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Guardar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: urso-dourado-apk
+          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
